@@ -1,5 +1,4 @@
-from typing import KeysView
-import xlsxwriter
+import xlsxwriter, traceback
 import requests
 import os, random, time, re, hashlib, json, datetime, platform, getpass, smtplib
 import art
@@ -35,7 +34,7 @@ FIND_APPOINTMENT_BY_LATLONG = BASE_URL + "/v2/appointment/centers/public/findByL
 
 def printResponseData(response):
     '''
-    FOR DEBUGGING ONLY, TO BE REMOVED BEFORE COMMIT
+    Used for debugging purpose to display HTTP response related data
     '''
     print("\nData For Request")
     print("URL: ", response.request.url)
@@ -48,11 +47,18 @@ def printResponseData(response):
     print("Body: ", response.text)
 
 def get_user_agents():
+    '''
+    To read the user agents from user_agents.txt
+    '''
     global user_agents
     with open("user_agents.txt", 'r') as file:
         user_agents = file.readlines()
 
 def getPhoneNumberFromUser():
+    '''
+    Function to get phone number from user.
+    This function uses regex to check if phone number format is correct or not
+    '''
     while 1:
         number = input("Please enter your mobile number: ")
         if re.match(PHONENUMBER_REGEX, number) != None:
@@ -141,6 +147,9 @@ def confirmOTP(otp, txnId):
             print("Text:", response.text)
 
 def getListOfStates(token):
+    '''
+    To get a list of states from the COWIN API and save it in states.xlsx
+    '''
     GET_HEADERS["Host"] = HOST
     GET_HEADERS["User-Agent"] = random.choice(user_agents).replace("\n", "")
     GET_HEADERS["Authorization"] = "Bearer {0}".format(token)
@@ -155,6 +164,9 @@ def getListOfStates(token):
             break
 
 def getListOfDistricts(state_id, token):
+    '''
+    To get a list of districts based on the state ID and save if in districts.xlsx
+    '''
     GET_HEADERS["Host"] = HOST
     GET_HEADERS["User-Agent"] = random.choice(user_agents).replace("\n", "")
     GET_HEADERS["Authorization"] = "Bearer {0}".format(token)
@@ -169,6 +181,9 @@ def getListOfDistricts(state_id, token):
             break
 
 def saveListOfStates(filename, data):
+    '''
+    To save the list of states received from the API onto an excel by the name 'filename'
+    '''
     if not filename in os.listdir():
         workbook = xlsxwriter.Workbook(filename)
         worksheet = workbook.add_worksheet()
@@ -182,6 +197,9 @@ def saveListOfStates(filename, data):
         workbook.close()
 
 def saveListOfDistricts(filename, data):
+    '''
+    To save list of districts received from the API onto an excel by the name 'filename'
+    '''
     if not filename in os.listdir():
         workbook = xlsxwriter.Workbook(filename)
         worksheet = workbook.add_worksheet()
@@ -196,7 +214,7 @@ def saveListOfDistricts(filename, data):
 
 def getUserChoiceMainMenu():
     '''
-    Function to ask for user choice
+    Function to ask for user commands
     '''
     if PLATFORM == "Windows":
         os.system("cls")
@@ -214,7 +232,7 @@ def getUserChoiceMainMenu():
             print("5. Set up an email reminder loop")
             print("6. Exit")
             choice = int(input("Enter your choice (1/2/3/4): "))
-            if choice in [1, 2, 3, 4]:
+            if choice in [1, 2, 3, 4, 5, 6]:
                 if choice == 1:
                     print("[INFO] Choice: Get list of districts.")
                     return "DISTRICTS"
@@ -240,6 +258,9 @@ def getUserChoiceMainMenu():
         
 
 def processUserChoice(opt, token, isEmailLoop = False):
+    '''
+    To process user commands and perform correct actions based on the input
+    '''
     output = {
         "by": "",
         "param":{}
@@ -254,6 +275,9 @@ def processUserChoice(opt, token, isEmailLoop = False):
         output["by"] = "pincode"
         output["param"] = {"pincode": pincode,"date": curr_time}
         data = getDataFromAPI(token, output)
+        if len(data["sessions"]) == 0:
+            print("[INFO] No data found for this request...")
+            return 0
         if not isEmailLoop:
             saveDataInExcel(data)
         else:
@@ -263,6 +287,9 @@ def processUserChoice(opt, token, isEmailLoop = False):
         output["by"] = "district"
         output["param"] = {"district_id": district_id,"date": curr_time}
         data = getDataFromAPI(token, output)
+        if len(data["sessions"]) == 0:
+            print("[INFO] No data found for this request...")
+            return 0
         if not isEmailLoop:
             saveDataInExcel(data)
         else:
@@ -273,6 +300,9 @@ def processUserChoice(opt, token, isEmailLoop = False):
         output["by"] = "latlong"
         output["param"] = {"lat": lat,"long": long}
         data = getDataFromAPI(token, output)
+        if len(data["sessions"]) == 0:
+            print("[INFO] No data found for this request...")
+            return 0
         if not isEmailLoop:
             saveDataInExcel(data)
         else:
@@ -281,10 +311,16 @@ def processUserChoice(opt, token, isEmailLoop = False):
         option = setEmailReminderLoop()
         startEmailReminderLoop(option, token)
         data = getDataFromAPI(token, output)
+        if len(data["sessions"]) == 0:
+            print("[INFO] No data found for this request...")
+            return 0
         if not isEmailLoop:
             saveDataInExcel(data)
 
 def startEmailReminderLoop(opt, token):
+    '''
+    To ask user for email reminder settings
+    '''
     output = {
         "by": "",
         "param": {}
@@ -321,8 +357,8 @@ def startEmailReminderLoop(opt, token):
                 print("[INFO] No slots available. ")
                 continue
 
-            print("[INFO] Waiting for 2 minutes before sneding another request...")
-            time.sleep(120)
+            print("[INFO] Waiting for 30 minutes before sending another request...")
+            time.sleep(1800)
 
     except KeyboardInterrupt:
         print("[INFO] User interrupt....exiting")
@@ -331,6 +367,9 @@ def startEmailReminderLoop(opt, token):
         print(ex)
 
 def setEmailReminderLoop():
+    '''
+    To set and start the email reminder loop based on user settings
+    '''
     if PLATFORM == "Windows":
         os.system("cls")
     else:
@@ -365,6 +404,9 @@ def setEmailReminderLoop():
             break                
         
 def sendMail(filepath):
+    '''
+    Function to send email reminder mail and attach the required excel at 'filepath'
+    '''
     global email, password
     content = '''
     Hey there,
@@ -389,17 +431,21 @@ def sendMail(filepath):
                 receiver_email = input("[INFO] Enter the email ID you want to send emails to: ")
             if "gmail" in email:
                 host = "smtp.gmail.com"
-                port = 465
+                port = 587
+            elif "outlook" in email:
+                host = "smtp-mail.outlook.com"
+                port = 587
             else:
-                print("[ERROR] This script only supports gmail IDs as of now. Please enter a gmail ID")
+                print("[ERROR] This script only supports gmail and outlook IDs as of now. Please enter a gmail or outlook ID")
                 email, password = '', ''
 
             mail = smtplib.SMTP(host, port)
             mail.starttls()
             try:
                 mail.login(email, password)
-            except:
+            except Exception as ex:
                 print("[ERROR] Invalid username and password...please try again")
+                print(traceback.print_exc())
                 email, password = '', ''
                 continue
 
@@ -420,11 +466,14 @@ def sendMail(filepath):
             print("[INFO] Seccessfully send mail to {0}".format(receiver_email))
             break
         except Exception as ex:
-            print(ex)
+            print(traceback.print_exc())
             break
         
 
 def getDataFromAPI(token, choice):
+    '''
+    To get data from API based on user choices and commands
+    '''
     by = choice["by"]
     url = ""
     POST_HEADERS["Authorization"] = "Bearer {0}".format(token)
@@ -443,10 +492,16 @@ def getDataFromAPI(token, choice):
         printResponseData(response)
 
 def saveDataInExcel(data, isReturnFilename = False):
+    '''
+    To save data from API onto an excel file
+    '''
     curr_dir = os.getcwd()
     if not os.path.exists(os.path.join(curr_dir, 'data')):
         os.mkdir("data")
     os.chdir(os.path.join(curr_dir, "data"))
+    for file in os.listdir(os.path.join(curr_dir, "data")):
+        if file.endswith(".xlsx"):
+            os.unlink(file)
     filename = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S") + ".xlsx"
     workbook = xlsxwriter.Workbook(filename)
     worksheet = workbook.add_worksheet()
@@ -472,6 +527,9 @@ def saveDataInExcel(data, isReturnFilename = False):
         return filename
 
 def main():
+    '''
+    main function
+    '''
     global user_agents
     welcome_message()
     get_user_agents()
